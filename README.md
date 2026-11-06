@@ -167,9 +167,10 @@ lifecycle (fallback, reconnect, stale-callback handling).
 
 | Job | Runner | What it does |
 |---|---|---|
-| Unit tests | `macos-15` (arm64) and `macos-15-intel` (x86_64) | Generate project, run `WorldTVUnit`, upload `.xcresult` and logs |
+| Unit tests (x86_64) | `macos-15-intel` | Generate project, run `WorldTVUnit`, upload `.xcresult` and logs (required) |
+| Unit tests (arm64) | `macos-15` | Same suite on Apple Silicon (non-blocking — arm64 hosted runners can be capacity-constrained) |
 | UI tests | `macos-15` | XCUITest smoke tests (non-blocking — hosted runners may lack accessibility permissions) |
-| Build DMG | `macos-15` | Release archive (universal), sign, create DMG, validate, SHA-256, release notes, upload artifacts and logs |
+| Build DMG | `macos-15-intel` | Release archive (universal arm64 + x86_64), sign, create DMG, validate, SHA-256, release notes, upload artifacts and logs |
 | Publish release | `ubuntu-latest` | On `v*` tags: GitHub Release with the DMG and checksum |
 
 Release a version:
