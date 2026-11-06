@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#23262E"/>
+      <stop offset="1" stop-color="#08090C"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#35C8F9"/>
+      <stop offset="1" stop-color="#8B6BFE"/>
+    </linearGradient>
+    <linearGradient id="brandU" gradientUnits="userSpaceOnUse" x1="432" y1="700" x2="592" y2="760">
+      <stop offset="0" stop-color="#4FB0FB"/>
+      <stop offset="1" stop-color="#8B6BFE"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.46" r="0.5">
+      <stop offset="0" stop-color="#35C8F9" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#35C8F9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121722"/>
+      <stop offset="1" stop-color="#0B0D13"/>
+    </linearGradient>
+    <clipPath id="screenClip">
+      <rect x="222" y="262" width="580" height="420" rx="64"/>
+    </clipPath>
+    <clipPath id="globeClip">
+      <circle cx="512" cy="472" r="168"/>
+    </clipPath>
+  </defs>
+
+  <!-- macOS icon body (824 x 824 on the 1024 grid) -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08"/>
+  <circle cx="512" cy="472" r="360" fill="url(#glow)"/>
+
+  <!-- TV screen -->
+  <rect x="222" y="262" width="580" height="420" rx="64" fill="url(#screen)"/>
+  <g clip-path="url(#screenClip)">
+    <!-- globe -->
+    <g clip-path="url(#globeClip)" fill="none" stroke="url(#brand)" stroke-width="14" stroke-linecap="round">
+      <ellipse cx="512" cy="472" rx="62" ry="168"/>
+      <ellipse cx="512" cy="472" rx="124" ry="168"/>
+      <line x1="512" y1="300" x2="512" y2="644"/>
+      <line x1="340" y1="472" x2="684" y2="472"/>
+      <path d="M352 400 Q512 440 672 400"/>
+      <path d="M352 544 Q512 504 672 544"/>
+    </g>
+    <circle cx="512" cy="472" r="168" fill="none" stroke="url(#brand)" stroke-width="18"/>
+  </g>
+  <rect x="222" y="262" width="580" height="420" rx="64" fill="none" stroke="url(#brand)" stroke-width="22"/>
+
+  <!-- live indicator -->
+  <circle cx="742" cy="322" r="20" fill="#FF4554"/>
+
+  <!-- stand -->
+  <path d="M512 694 L512 750" stroke="url(#brandU)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M420 768 L604 768" stroke="url(#brandU)" stroke-width="28" stroke-linecap="round"/>
+</svg>

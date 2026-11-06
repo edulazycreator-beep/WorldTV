@@ -1,0 +1,21 @@
+# Xcode
+*.xcodeproj/
+!*.xcodeproj/project.xcworkspace/xcshareddata/
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.moved-aside
+*.xcscmblueprint
+build/
+dist/
+*.xcresult
+# SwiftPM
+.build/
+.swiftpm/
+# macOS
+.DS_Store
+# Signing material must never be committed
+*.p12
+*.cer
+*.mobileprovision
+*.keychain-db

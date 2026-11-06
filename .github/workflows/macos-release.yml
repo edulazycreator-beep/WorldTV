@@ -1,0 +1,283 @@
+name: macOS Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Unit tests on Apple Silicon and Intel runners.
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen || brew upgrade xcodegen
+
+      - name: Generate project & resolve packages
+        run: |
+          xcodegen generate --spec project.yml
+          xcodebuild -resolvePackageDependencies -project WorldTV.xcodeproj -scheme WorldTV
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          xcodebuild test \
+            -project WorldTV.xcodeproj \
+            -scheme WorldTVUnit \
+            -destination "platform=macOS,arch=${{ matrix.arch }}" \
+            -resultBundlePath build/UnitTests-${{ matrix.arch }}.xcresult \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            2>&1 | tee build/logs/unit-tests-${{ matrix.arch }}.log
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-${{ matrix.arch }}
+          path: |
+            build/UnitTests-${{ matrix.arch }}.xcresult
+            build/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # UI tests. Hosted runners can lack the accessibility permissions XCUITest
+  # needs, so failures here are reported but do not block the release.
+  # ---------------------------------------------------------------------------
+  ui-tests:
+    name: UI tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: brew install xcodegen || brew upgrade xcodegen
+      - name: Run UI tests
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          xcodegen generate --spec project.yml
+          xcodebuild test \
+            -project WorldTV.xcodeproj \
+            -scheme WorldTV \
+            -only-testing:WorldTVUITests \
+            -destination "platform=macOS" \
+            -resultBundlePath build/UITests.xcresult \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            2>&1 | tee build/logs/ui-tests.log
+      - name: Upload UI test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-tests
+          path: |
+            build/UITests.xcresult
+            build/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Release build, DMG packaging, validation. Signs and notarizes when the
+  # Apple secrets are configured; otherwise produces an ad-hoc signed DMG.
+  # ---------------------------------------------------------------------------
+  package:
+    name: Build DMG
+    needs: unit-tests
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      HAS_SIGNING: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' }}
+      HAS_NOTARY: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dmg: ${{ steps.version.outputs.dmg }}
+      signed: ${{ steps.summary.outputs.signed }}
+      notarized: ${{ steps.summary.outputs.notarized }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install dependencies
+        run: brew install xcodegen || brew upgrade xcodegen
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(awk -F'"' '/MARKETING_VERSION:/ {print $2; exit}' project.yml)"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dmg=WorldTV-$VERSION-macOS.dmg" >> "$GITHUB_OUTPUT"
+          echo "Building World TV $VERSION (build ${{ github.run_number }})"
+
+      - name: Import Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/worldtv-signing.keychain-db"
+          CERT="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$CERT"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep 'Developer ID Application' | head -n1 | sed -E 's/.*"(.+)"$/\1/')"
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No 'Developer ID Application' identity found in the provided certificate."
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Signing identity loaded."
+
+      - name: Build app (Release, universal)
+        run: Scripts/build.sh
+
+      - name: Create DMG
+        env:
+          APPLE_ID: ${{ env.HAS_NOTARY == 'true' && env.HAS_SIGNING == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_TEAM_ID: ${{ env.HAS_NOTARY == 'true' && env.HAS_SIGNING == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ env.HAS_NOTARY == 'true' && env.HAS_SIGNING == 'true' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+        run: Scripts/create-dmg.sh
+
+      - name: Validate DMG
+        run: Scripts/validate.sh "dist/${{ steps.version.outputs.dmg }}" 2>&1 | tee build/logs/validate.log
+
+      - name: Write release notes
+        id: summary
+        run: |
+          SIGNED=false; NOTARIZED=false
+          [[ "$HAS_SIGNING" == "true" ]] && SIGNED=true
+          [[ "$HAS_SIGNING" == "true" && "$HAS_NOTARY" == "true" ]] && NOTARIZED=true
+          echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"
+          echo "notarized=$NOTARIZED" >> "$GITHUB_OUTPUT"
+
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          if [[ -n "$PREVIOUS_TAG" ]]; then RANGE="$PREVIOUS_TAG..HEAD"; else RANGE="HEAD"; fi
+          CHECKSUM="$(cut -d' ' -f1 "dist/${{ steps.version.outputs.dmg }}.sha256")"
+          {
+            echo "## World TV $VERSION"
+            echo
+            echo "Native macOS app for watching publicly available TV channels from around the world."
+            echo
+            echo "**Requires:** macOS 13 Ventura or later · Universal (Apple Silicon + Intel)"
+            echo
+            if [[ "$NOTARIZED" == "true" ]]; then
+              echo "This build is signed with a Developer ID and notarized by Apple."
+            elif [[ "$SIGNED" == "true" ]]; then
+              echo "This build is Developer ID signed but **not notarized**; Gatekeeper may warn on first launch."
+            else
+              echo "This build is **ad-hoc signed and not notarized**. On first launch, Control-click World TV in Applications and choose **Open**, or run:"
+              echo '```'
+              echo 'xattr -dr com.apple.quarantine "/Applications/World TV.app"'
+              echo '```'
+            fi
+            echo
+            echo "### Install"
+            echo "1. Download \`${{ steps.version.outputs.dmg }}\` and open it."
+            echo "2. Drag **World TV** onto **Applications**."
+            echo
+            echo "### SHA-256"
+            echo "\`$CHECKSUM\`"
+            echo
+            echo "### Changes"
+            git log --pretty='- %s (%h)' $RANGE | head -n 50
+          } > dist/RELEASE_NOTES.md
+          cat dist/RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: WorldTV-${{ steps.version.outputs.version }}-macOS
+          path: |
+            dist/${{ steps.version.outputs.dmg }}
+            dist/${{ steps.version.outputs.dmg }}.sha256
+            dist/RELEASE_NOTES.md
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Clean up keychain
+        if: always() && env.HAS_SIGNING == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/worldtv-signing.keychain-db" || true
+
+  # ---------------------------------------------------------------------------
+  # Publish a GitHub Release for version tags (v1.0.0 → WorldTV-1.0.0-macOS.dmg).
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: WorldTV-${{ needs.package.outputs.version }}-macOS
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: World TV ${{ needs.package.outputs.version }}
+          body_path: dist/RELEASE_NOTES.md
+          prerelease: ${{ contains(needs.package.outputs.version, '-') }}
+          files: |
+            dist/${{ needs.package.outputs.dmg }}
+            dist/${{ needs.package.outputs.dmg }}.sha256
