@@ -2,9 +2,11 @@ import AppKit
 import SwiftUI
 
 /// Two-level logo cache: decoded images in memory (NSCache, auto-evicting)
-/// and raw bytes on disk via the shared URLCache. Concurrent requests for the
-/// same URL share one download.
-actor ImageCache {
+/// and raw bytes on disk via URLCache. Concurrent requests for the same URL
+/// share one download. Main-actor isolated because `NSImage` is only
+/// `Sendable` from macOS 14; downloads still happen off the main thread.
+@MainActor
+final class ImageCache {
     static let shared = ImageCache()
 
     private let memory: NSCache<NSURL, NSImage> = {
@@ -35,9 +37,9 @@ actor ImageCache {
         let session = self.session
         let task = Task<NSImage?, Never> {
             guard let (data, response) = try? await session.data(from: url),
-                  (response as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) ?? true,
-                  let image = NSImage(data: data) else { return nil }
-            return image
+                  (response as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) ?? true
+            else { return nil }
+            return NSImage(data: data)
         }
         inFlight[url] = task
         let image = await task.value
@@ -83,7 +85,7 @@ struct ChannelLogoView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .task(id: channel.logoURL) {
             guard let url = channel.logoURL else { image = nil; return }
-            if let cached = await ImageCache.shared.cachedImage(for: url) {
+            if let cached = ImageCache.shared.cachedImage(for: url) {
                 image = cached
                 return
             }
