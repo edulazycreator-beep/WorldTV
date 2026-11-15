@@ -11,7 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.ChildCare
@@ -70,7 +70,7 @@ enum class ListKind { ALL, COUNTRY, CONTINENT, CATEGORY, LANGUAGE, FAVORITES, HI
 enum class SortOrder(val label: String) { POPULAR("Most popular"), NAME("Name A–Z"), NEWEST("Recently added") }
 
 fun categoryIcon(id: String): ImageVector = when (id) {
-    "news" -> Icons.Filled.Article
+    "news" -> Icons.AutoMirrored.Filled.Article
     "sports" -> Icons.Filled.SportsSoccer
     "entertainment" -> Icons.Filled.AutoAwesome
     "movies" -> Icons.Filled.Movie
