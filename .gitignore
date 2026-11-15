@@ -19,3 +19,12 @@ dist/
 *.cer
 *.mobileprovision
 *.keychain-db
+# Android / Gradle
+.gradle/
+local.properties
+.idea/
+*.iml
+*.jks
+*.keystore
+keystore.properties
+captures/
