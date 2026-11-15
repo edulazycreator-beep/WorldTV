@@ -246,6 +246,58 @@ To sign locally: `SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" Script
 
 App data lives in `~/Library/Containers/io.github.worldtv.WorldTV/Data/Library/Application Support/WorldTV/`.
 
+## Android app
+
+The `android/` folder contains **World TV for Android**: phones, tablets and Android TV / Google TV (Android 6.0+).
+It is a native Kotlin app (Jetpack Compose, Material 3, Media3/ExoPlayer) with the same features as the macOS app:
+
+- iptv-org public directory (downloaded at runtime and cached; NSFW, closed and DMCA-blocklisted channels excluded)
+- Home, Explore (country / continent / category / language), ranked search with filters
+- Live player: HLS/DASH/MP4, automatic fallback to a channel's other streams, reconnect with backoff,
+  stall detection, live-edge resume, stream picker, aspect-ratio modes, Picture-in-Picture, channel up/down
+- TV Guide (XMLTV, `.xml` / `.xml.gz`), favorites, groups, watch history
+- M3U/M3U8 playlist import from a URL or a file (`url-tvg`, `tvg-*`, `#EXTVLCOPT`, Kodi `|User-Agent=` headers),
+  stream health checks and removal of unreachable streams
+- D-pad / remote support and a Leanback launcher banner for Android TV
+
+### Build
+
+```bash
+cd android
+./gradlew testDebugUnitTest      # unit tests (parsers, catalog, search, library)
+./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
+./gradlew bundleRelease          # app/build/outputs/bundle/release/app-release.aab
+```
+
+Requires JDK 17 and the Android SDK (or just open `android/` in Android Studio).
+
+### CI (`.github/workflows/android-release.yml`)
+
+Every push to `main` or `android` runs unit tests, builds the APK and AAB, and boots an Android 14 emulator
+that launches the app, visits every screen and starts playback (screenshots are uploaded as the
+`android-smoke-screenshots` artifact). Pushing a `v*` tag attaches `WorldTV-<version>-android.apk` and `.aab`
+(with SHA-256 files) to the same GitHub Release as the macOS DMG.
+
+Release signing uses these repository secrets; without them the APK is signed with a debug key
+(installable via sideloading, but not accepted by Google Play):
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 worldtv-release.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | key alias |
+| `ANDROID_KEY_PASSWORD` | key password |
+
+Create a keystore once with
+`keytool -genkeypair -v -keystore worldtv-release.jks -alias worldtv -keyalg RSA -keysize 4096 -validity 10000`
+and keep a backup of it: every future update must be signed with the same key.
+
+### Installing the APK
+
+Download `WorldTV-<version>-android.apk` from the release (or from the workflow artifact), open it on the
+device and allow installing from that source. On Android TV, sideload it with a file manager or
+`adb install WorldTV-<version>-android.apk`.
+
 ## Legal and streaming sources
 
 - World TV is a player and directory browser. It does not host, record, rebroadcast or modify any content.
