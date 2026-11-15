@@ -51,7 +51,7 @@ for i in $(seq 1 18); do
 done
 shot 02-home
 tap_text '^Explore$' && sleep 3 && shot 03-explore
-tap_text '^Search$' && sleep 2 && adb shell input text "news" && sleep 3 && shot 04-search
+tap_text '^Search$' && sleep 2 && adb shell input text "news" && sleep 3 && shot 04-search && adb shell input keyevent KEYCODE_BACK && sleep 1
 tap_text '^Guide$' && sleep 2 && shot 05-guide
 tap_text '^Library$' && sleep 2 && shot 06-library
 tap_text '^Home$' && sleep 4
@@ -71,8 +71,9 @@ fi
 alive || { echo "::error::App process is not running"; exit 1; }
 tap_text '^Settings$' || true
 # Print small JPEG previews into the log (artifacts are not always downloadable).
+python3 -m pip install --quiet --user pillow >/dev/null 2>&1 || true
 for f in "$OUT"/*.png; do
-  convert "$f" -resize 40% -quality 55 "${f%.png}.jpg" 2>/dev/null || continue
+  python3 -c "import sys; from PIL import Image; im=Image.open(sys.argv[1]).convert('RGB'); im.thumbnail((432, 960)); im.save(sys.argv[2], quality=60)" "$f" "${f%.png}.jpg" || continue
   echo "===IMG $(basename "${f%.png}")==="; base64 -w0 "${f%.png}.jpg"; echo; echo "===END==="
 done
 echo "--- player log ---"; cat "$OUT/player-log.txt"
