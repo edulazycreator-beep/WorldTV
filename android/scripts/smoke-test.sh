@@ -8,7 +8,17 @@ PKG=io.github.worldtv.android
 mkdir -p "$OUT"
 
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; echo "screenshot $1"; }
-dump() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml > "$OUT/ui.xml" 2>/dev/null; }
+dump() {
+  for _ in 1 2 3 4; do
+    adb shell rm -f /sdcard/ui.xml
+    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+    adb shell cat /sdcard/ui.xml > "$OUT/ui.xml" 2>/dev/null
+    grep -q "<node" "$OUT/ui.xml" && return 0
+    sleep 2
+  done
+  echo "uiautomator dump failed"
+}
+texts() { dump; grep -o 'text="[^"]\+"' "$OUT/ui.xml" | head -40 | tr '\n' ' '; echo; }
 # Tap the centre of the first node whose text or content-desc matches $1 (regex).
 tap_text() {
   dump
@@ -44,9 +54,11 @@ tap_text '^Explore$' && sleep 3 && shot 03-explore
 tap_text '^Search$' && sleep 2 && adb shell input text "news" && sleep 3 && shot 04-search
 tap_text '^Guide$' && sleep 2 && shot 05-guide
 tap_text '^Library$' && sleep 2 && shot 06-library
-tap_text '^Home$' && sleep 3
-tap_text '^LIVE$' || tap_text 'channels'
+tap_text '^Home$' && sleep 4
+echo "home texts: $(texts)"
+tap_text '^LIVE$' || tap_text 'Popular now'
 sleep 25; shot 07-player
+echo "player texts: $(texts)"
 adb shell input tap 540 1000; sleep 1; shot 08-player-controls
 adb shell input keyevent KEYCODE_BACK; sleep 2
 tap_text '^Settings$|^Library$' && sleep 2 && shot 09-after-player
@@ -57,4 +69,11 @@ if grep -A30 "FATAL EXCEPTION" "$OUT/logcat.txt" | grep -q "$PKG\|io.github.worl
   echo "::error::App crashed during smoke test"; grep -A40 "FATAL EXCEPTION" "$OUT/logcat.txt"; exit 1
 fi
 alive || { echo "::error::App process is not running"; exit 1; }
+tap_text '^Settings$' || true
+# Print small JPEG previews into the log (artifacts are not always downloadable).
+for f in "$OUT"/*.png; do
+  convert "$f" -resize 40% -quality 55 "${f%.png}.jpg" 2>/dev/null || continue
+  echo "===IMG $(basename "${f%.png}")==="; base64 -w0 "${f%.png}.jpg"; echo; echo "===END==="
+done
+echo "--- player log ---"; cat "$OUT/player-log.txt"
 echo "Smoke test passed"
